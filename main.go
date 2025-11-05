@@ -382,7 +382,7 @@ func main() {
 		}
 	default:
 		fmt.Println("Usage:")
-		fmt.Println("  go run . serve -vault /path/to/vault -addr :8361 -key SECRET")
+		fmt.Println("  go run . serve -vault \"/mnt/c/Users/****" -addr \":8361\" -key SECRET")
 		fmt.Println("  go run . pull  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
 		fmt.Println("  go run . push  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
 	}
