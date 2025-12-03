@@ -348,11 +348,18 @@ func main() {
 	switch cmd {
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
+		tag := fs.String("tag", "default", "discovery tag (mDNS label to announce)")
+		device := fs.String("device", "obs-transfer", "device name")
 		vault := fs.String("vault", ".", "path to Obsidian vault")
 		addr := fs.String("addr", ":8361", "listen address")
 		key := fs.String("key", "", "shared secret (X-Key)")
-		device := fs.String("device", "obs-transfer", "device name")
-		_ = fs.Parse(os.Args[2:])
+
+	mdns, err := startMDNS(*device, *tag, *vault, *addr)
+		if err != nil {
+			log.Printf("mDNS advertise failed: %v", err)
+		} else {
+			defer mdns.Shutdown()
+		}
 		if err := runServer(*vault, *addr, *key, *device); err != nil {
 			log.Fatal(err)
 		}
@@ -380,9 +387,21 @@ func main() {
 		if err := runPush(*vault, *peer, *key); err != nil {
 			log.Fatal(err)
 		}
+	case "discover":
+		fs := flag.NewFlagSet("discover", flag.ExitOnError)
+		tag := fs.String("tag", "default", "filter by tag")
+		wait := fs.Duration("timeout", 3*time.Second, "browse timeout")
+		_ = fs.Parse(os.Args[2:])
+		peers, err := discoverPeers(*tag, *wait)
+		if err != nil { log.Fatal(err) }
+		if len(peers) == 0 { fmt.Println("no peers"); return }
+		for _, p := range peers {
+			fmt.Printf("%-22s %-20s %s  (%s / %s)\n", p.Name, p.IP, p.URL, p.Device, p.Vault)
+		}
+
 	default:
 		fmt.Println("Usage:")
-		fmt.Println("  go run . serve -vault \"/mnt/c/Users/****" -addr \":8361\" -key SECRET")
+		fmt.Println("  go run . serve -vault \"/mnt/c/Users/joell/Documents/Obsidian Vault/main\" -addr \":8361\" -key SECRET")
 		fmt.Println("  go run . pull  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
 		fmt.Println("  go run . push  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
 	}
