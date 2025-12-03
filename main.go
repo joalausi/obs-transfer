@@ -347,22 +347,31 @@ func main() {
 
 	switch cmd {
 	case "serve":
-		fs := flag.NewFlagSet("serve", flag.ExitOnError)
-		tag := fs.String("tag", "default", "discovery tag (mDNS label to announce)")
-		device := fs.String("device", "obs-transfer", "device name")
-		vault := fs.String("vault", ".", "path to Obsidian vault")
-		addr := fs.String("addr", ":8361", "listen address")
-		key := fs.String("key", "", "shared secret (X-Key)")
+    fs := flag.NewFlagSet("serve", flag.ExitOnError)
 
-	mdns, err := startMDNS(*device, *tag, *vault, *addr)
-		if err != nil {
-			log.Printf("mDNS advertise failed: %v", err)
-		} else {
-			defer mdns.Shutdown()
-		}
-		if err := runServer(*vault, *addr, *key, *device); err != nil {
-			log.Fatal(err)
-		}
+    vault  := fs.String("vault", ".",            "path to Obsidian vault")
+    addr   := fs.String("addr",  ":8361",        "listen address")
+    key    := fs.String("key",   "",             "shared secret (X-Key)")
+    device := fs.String("device","obs-transfer", "device name")
+    tag    := fs.String("tag",   "default",      "discovery tag (mDNS label)")
+
+    _ = fs.Parse(os.Args[2:])
+
+    log.Printf("serve args: vault=%q addr=%q device=%q tag=%q", *vault, *addr, *device, *tag)
+
+    mdns, err := startMDNS(*device, *tag, *vault, *addr)
+    if err != nil {
+        log.Printf("mDNS advertise failed: %v", err)
+    } else {
+        log.Printf("mDNS advertise ok: device=%s tag=%s vault=%s addr=%s",
+            *device, *tag, filepath.Base(*vault), *addr)
+        defer mdns.Shutdown()
+    }
+
+    if err := runServer(*vault, *addr, *key, *device); err != nil {
+        log.Fatal(err)
+    }
+	
 	case "pull":
 		fs := flag.NewFlagSet("pull", flag.ExitOnError)
 		vault := fs.String("vault", ".", "path to Obsidian vault")
