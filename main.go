@@ -144,41 +144,53 @@ func authMiddleware(key string, next http.Handler) http.Handler {
 
 func runServer(vault, addr, key, device string) error {
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("/manifest", func(w http.ResponseWriter, r *http.Request) {
-		m, err := buildManifest(vault, device)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(m)
-	})
+        log.Printf("GET /manifest from %s", r.RemoteAddr)
 
-	mux.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("path")
-		if q == "" || strings.Contains(q, "..") {
-			http.Error(w, "bad path", 400)
-			return
-		}
-		full := filepath.Join(vault, filepath.FromSlash(q))
-		switch r.Method {
-		case http.MethodGet:
-			http.ServeFile(w, r, full)
-		case http.MethodPut:
+        m, err := buildManifest(vault, device)
+        if err != nil {
+            log.Printf("buildManifest error: %v", err)
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        w.Header().Set("Content-Type", "application/json")
+        if err := json.NewEncoder(w).Encode(m); err != nil {
+            log.Printf("encode manifest error: %v", err)
+        }
+    })
+
+    mux.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
+    	q := r.URL.Query().Get("path")
+        log.Printf("%s /file %q from %s", r.Method, q, r.RemoteAddr)
+
+        if q == "" || strings.Contains(q, "..") {
+            http.Error(w, "bad path", http.StatusBadRequest)
+            return
+        }
+
+        full := filepath.Join(vault, filepath.FromSlash(q))
+
+        switch r.Method {
+        case http.MethodGet:
+            http.ServeFile(w, r, full)
+
+        case http.MethodPut:
 			// принимаем файл
-			if err := writeFileAtomic(full, r.Body); err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.Error(w, "method not allowed", 405)
-		}
-	})
+            if err := writeFileAtomic(full, r.Body); err != nil {
+                log.Printf("writeFileAtomic(%q) error: %v", full, err)
+                http.Error(w, err.Error(), http.StatusInternalServerError)
+                return
+            }
+            w.WriteHeader(http.StatusNoContent)
 
-	log.Printf("Serving %s on %s", vault, addr)
-	return http.ListenAndServe(addr, authMiddleware(key, mux))
+        default:
+            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        }
+    })
+
+    log.Printf("Serving %s on %s", vault, addr)
+    return http.ListenAndServe(addr, authMiddleware(key, mux))
 }
 
 func fetchManifest(peer, key string) (Manifest, error) {
