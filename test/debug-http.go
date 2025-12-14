@@ -14,6 +14,6 @@ func main() {
         fmt.Fprintln(w, "ok from debug server")
     })
 
-    log.Println("DEBUG: listening on 0.0.0.0:8361")
-    log.Fatal(http.ListenAndServe("0.0.0.0:8361", nil))
+    log.Println("DEBUG: listening on 0.0.0.0:8080")
+    log.Fatal(http.ListenAndServe("0.0.0.0:8080", nil))
 }
