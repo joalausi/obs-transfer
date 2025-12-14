@@ -362,7 +362,7 @@ func main() {
     fs := flag.NewFlagSet("serve", flag.ExitOnError)
 
     vault  := fs.String("vault", ".",            "path to Obsidian vault")
-    addr   := fs.String("addr",  ":8361",        "listen address")
+    addr   := fs.String("addr",  ":8080",        "listen address")
     key    := fs.String("key",   "",             "shared secret (X-Key)")
     device := fs.String("device","obs-transfer", "device name")
     tag    := fs.String("tag",   "default",      "discovery tag (mDNS label)")
@@ -387,7 +387,7 @@ func main() {
 	case "pull":
 		fs := flag.NewFlagSet("pull", flag.ExitOnError)
 		vault := fs.String("vault", ".", "path to Obsidian vault")
-		peer := fs.String("peer", "", "peer base URL, e.g. http://192.168.1.10:8361")
+		peer := fs.String("peer", "", "peer base URL, e.g. http://192.168.1.10:8080")
 		key := fs.String("key", "", "shared secret (X-Key)")
 		_ = fs.Parse(os.Args[2:])
 		if *peer == "" {
@@ -399,7 +399,7 @@ func main() {
 	case "push":
 		fs := flag.NewFlagSet("push", flag.ExitOnError)
 		vault := fs.String("vault", ".", "path to Obsidian vault")
-		peer := fs.String("peer", "", "peer base URL, e.g. http://192.168.1.10:8361")
+		peer := fs.String("peer", "", "peer base URL, e.g. http://192.168.1.10:8080")
 		key := fs.String("key", "", "shared secret (X-Key)")
 		_ = fs.Parse(os.Args[2:])
 		if *peer == "" {
@@ -422,9 +422,9 @@ func main() {
 
 	default:
 		fmt.Println("Usage:")
-		fmt.Println("  go run . serve -vault \"/mnt/c/Users/joell/Documents/Obsidian Vault/main\" -addr \":8361\" -key SECRET")
-		fmt.Println("  go run . pull  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
-		fmt.Println("  go run . push  -vault /path/to/vault -peer http://IP:8361 -key SECRET")
+		fmt.Println("  go run . serve -vault \"/mnt/c/Users/joell/Documents/Obsidian Vault/main\" -addr \":8080\" -key SECRET")
+		fmt.Println("  go run . pull  -vault /path/to/vault -peer http://IP:8080 -key SECRET")
+		fmt.Println("  go run . push  -vault /path/to/vault -peer http://IP:8080 -key SECRET")
 	}
 	os.Exit(0)
 }
