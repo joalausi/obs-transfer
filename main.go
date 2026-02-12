@@ -221,6 +221,7 @@ func fetchManifest(peer, key string) (Manifest, error) {
 }
 
 func downloadFile(peer, key, remotePath, dst string) error {
+	logTransfer("pull", remotePath, "started", nil)
 	url := strings.TrimRight(peer, "/") + "/file?path=" + remotePath
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	if key != "" {
@@ -228,15 +229,23 @@ func downloadFile(peer, key, remotePath, dst string) error {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		logTransfer("pull", remotePath, "failed_request", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("download status %d: %s", resp.StatusCode, string(body))
+		err := fmt.Errorf("download status %d: %s", resp.StatusCode, string(body))
+		logTransfer("pull", remotePath, "failed_status", err)
+		return err
 	}
 	full := filepath.Join(dst, filepath.FromSlash(remotePath))
-	return writeFileAtomic(full, resp.Body)
+	if err := writeFileAtomic(full, resp.Body); err != nil {
+		logTransfer("pull", remotePath, "failed_write", err)
+		return err
+	}
+	logTransfer("pull", remotePath, "completed", nil)
+	return nil
 }
 
 func localIndex(vault string) (map[string]FileEntry, error) {
@@ -266,33 +275,41 @@ func runPull(vault, peer, key string) error {
 	for _, rf := range rm.Files {
 		lf, ok := lidx[rf.Path]
 		if !ok {
+			logTransfer("pull", rf.Path, "queued_missing_local", nil)
 			toGet = append(toGet, rf)
 			continue
 		}
 		// если хеши совпадают - пропускаем
 		if rf.SHA256 == lf.SHA256 {
+			logTransfer("pull", rf.Path, "skipped_same_hash", nil)
 			continue
 		}
 		// если удалёнка новее - тянем
 		if rf.ModTime > lf.ModTime {
+			logTransfer("pull", rf.Path, "queued_remote_newer", nil)
 			toGet = append(toGet, rf)
 		} else {
 			// конфликт: локальный новее, а хеши разные - сохраняем копию удалённого
 			conflictPath := strings.TrimSuffix(rf.Path, filepath.Ext(rf.Path)) +
 				fmt.Sprintf(".conflict-%d", time.Now().Unix()) + filepath.Ext(rf.Path)
 			log.Printf("Conflict on %s -> will save remote as %s", rf.Path, conflictPath)
+			logTransfer("pull", rf.Path, "conflict_detected", nil)
 			// скачиваем по оригинальному пути, а потом переименуем
 			if err := downloadFile(peer, key, rf.Path, vault); err != nil {
+				logTransfer("pull", rf.Path, "conflict_download_failed", err)
 				return err
 			}
 			old := filepath.Join(vault, filepath.FromSlash(rf.Path))
 			newp := filepath.Join(vault, filepath.FromSlash(conflictPath))
 			if err := os.MkdirAll(filepath.Dir(newp), 0o755); err != nil {
+				logTransfer("pull", rf.Path, "conflict_prepare_failed", err)
 				return err
 			}
 			if err := os.Rename(old, newp); err != nil {
+				logTransfer("pull", rf.Path, "conflict_rename_failed", err)
 				return err
 			}
+			logTransfer("pull", rf.Path, "conflict_saved_as_copy", nil)
 			continue
 		}
 	}
@@ -301,6 +318,7 @@ func runPull(vault, peer, key string) error {
 	for i, f := range toGet {
 		log.Printf("[%d/%d] %s", i+1, len(toGet), f.Path)
 		if err := downloadFile(peer, key, f.Path, vault); err != nil {
+			logTransfer("pull", f.Path, "failed", err)
 			return err
 		}
 	}
@@ -332,11 +350,14 @@ func runPush(vault, peer, key string) error {
 		rf, ok := ridx[lf.Path]
 		shouldPush := !ok || (lf.SHA256 != rf.SHA256 && lf.ModTime > rf.ModTime)
 		if !shouldPush {
+			logTransfer("push", lf.Path, "skipped_remote_newer_or_same", nil)
 			continue
 		}
+		logTransfer("push", lf.Path, "started", nil)
 		full := filepath.Join(vault, filepath.FromSlash(lf.Path))
 		data, err := os.ReadFile(full)
 		if err != nil {
+			logTransfer("push", lf.Path, "failed_read", err)
 			return err
 		}
 		req, _ := http.NewRequest(http.MethodPut, base+"/file?path="+lf.Path, bytes.NewReader(data))
@@ -345,14 +366,17 @@ func runPush(vault, peer, key string) error {
 		}
 		resp, err := client.Do(req)
 		if err != nil {
+			logTransfer("push", lf.Path, "failed_request", err)
 			return err
 		}
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("push %s failed: %s", lf.Path, resp.Status)
+			err := fmt.Errorf("push %s failed: %s", lf.Path, resp.Status)
+			logTransfer("push", lf.Path, "failed_status", err)
+			return err
 		}
 		pushed++
-		log.Printf("Pushed %s", lf.Path)
+		logTransfer("push", lf.Path, "completed", nil)
 	}
 	log.Printf("Push finished. Updated %d file(s).", pushed)
 	return nil
@@ -370,28 +394,28 @@ func main() {
 	case "serve":
     fs := flag.NewFlagSet("serve", flag.ExitOnError)
 
-    vault  := fs.String("vault", ".",            "path to Obsidian vault")
-    addr   := fs.String("addr",  ":8080",        "listen address")
-    key    := fs.String("key",   "",             "shared secret (X-Key)")
-    device := fs.String("device","obs-transfer", "device name")
-    tag    := fs.String("tag",   "default",      "discovery tag (mDNS label)")
+		vault := fs.String("vault", ".", "path to Obsidian vault")
+		addr := fs.String("addr", ":8080", "listen address")
+		key := fs.String("key", "", "shared secret (X-Key)")
+		device := fs.String("device", "obs-transfer", "device name")
+		tag := fs.String("tag", "default", "discovery tag (mDNS label)")
 
-    _ = fs.Parse(os.Args[2:])
+		_ = fs.Parse(os.Args[2:])
 
-    log.Printf("serve args: vault=%q addr=%q device=%q tag=%q", *vault, *addr, *device, *tag)
+		log.Printf("serve args: vault=%q addr=%q device=%q tag=%q", *vault, *addr, *device, *tag)
 
-    mdns, err := startMDNS(*device, *tag, *vault, *addr)
-    if err != nil {
-        log.Printf("mDNS advertise failed: %v", err)
-    } else {
-        log.Printf("mDNS advertise ok: device=%s tag=%s vault=%s addr=%s",
-            *device, *tag, filepath.Base(*vault), *addr)
-        defer mdns.Shutdown()
-    }
+		mdns, err := startMDNS(*device, *tag, *vault, *addr)
+		if err != nil {
+			log.Printf("mDNS advertise failed: %v", err)
+		} else {
+			log.Printf("mDNS advertise ok: device=%s tag=%s vault=%s addr=%s",
+				*device, *tag, filepath.Base(*vault), *addr)
+			defer mdns.Shutdown()
+		}
 
-    if err := runServer(*vault, *addr, *key, *device); err != nil {
-        log.Fatal(err)
-    }
+		if err := runServer(*vault, *addr, *key, *device); err != nil {
+			log.Fatal(err)
+		}
 	
 	case "pull":
 		fs := flag.NewFlagSet("pull", flag.ExitOnError)
@@ -423,7 +447,13 @@ func main() {
 		wait := fs.Duration("timeout", 3*time.Second, "browse timeout")
 		_ = fs.Parse(os.Args[2:])
 		peers, err := discoverPeers(*tag, *wait)
-		if err != nil { log.Fatal(err) }
+		if err != nil {
+			log.Fatal(err)
+		}
+		if len(peers) == 0 {
+			fmt.Println("no peers")
+			return
+		}
 		if len(peers) == 0 { fmt.Println("no peers"); return }
 		for _, p := range peers {
 			fmt.Printf("%-22s %-20s %s  (%s / %s)\n", p.Name, p.IP, p.URL, p.Device, p.Vault)
