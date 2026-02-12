@@ -16,6 +16,15 @@ import (
 	"time"
 )
 
+func logTransfer(action, path, status string, err error) {
+	ts := time.Now().Format("2006-01-02 15:04:05")
+	if err != nil {
+		log.Printf("[%s] %s | file=%q | status=%s | error=%v", ts, action, path, status, err)
+		return
+	}
+	log.Printf("[%s] %s | file=%q | status=%s", ts, action, path, status)
+}
+
 type FileEntry struct {
 	Path    string `json:"path"`
 	ModTime int64  `json:"mod_time"`
